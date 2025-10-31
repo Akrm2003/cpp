@@ -45,6 +45,24 @@ bool BitcoinExchange::isValidValue(const std::string &valueStr, double &value) c
         value = std::stod(valueStr, &pos);
         if (pos != valueStr.size())
             return false;
+        if (value < 0 || value > 1000)
+            return false;
+    }
+    catch (const std::exception &)
+    {
+        return false;
+    }
+    return true;
+}
+
+bool BitcoinExchange::isValidDataValue(const std::string &valueStr, double &value) const
+{
+    try
+    {
+        size_t pos;
+        value = std::stod(valueStr, &pos);
+        if (pos != valueStr.size())
+            return false;
         if (value < 0)
             return false;
     }
@@ -59,31 +77,28 @@ bool BitcoinExchange::isValidDataLine(const std::string &line) const
 {
     size_t commaPos = line.find(',');
     if (commaPos == std::string::npos || line.find(',', commaPos + 1) != std::string::npos)
-        return false; // Ensure exactly one comma
+        return false;
 
     std::string date = line.substr(0, commaPos);
     std::string valueStr = line.substr(commaPos + 1);
-
-    // Validate the date and value
     double value;
-    return isValidDate(date) && isValidValue(valueStr, value);
+    return isValidDate(date) && isValidDataValue(valueStr, value);
 }
 
 bool BitcoinExchange::isValidInputLine(const std::string &line) const
 {
     size_t pipePos = line.find('|');
     if (pipePos == std::string::npos || line.find('|', pipePos + 1) != std::string::npos)
-        return false; // Ensure exactly one '|'
-
-    std::string date = line.substr(0, pipePos);
+        return false;
+	std::string date = line.substr(0, pipePos);
     std::string valueStr = line.substr(pipePos + 1);
-
+	
     // Trim whitespace around the date and value
     date.erase(0, date.find_first_not_of(" \t"));
     date.erase(date.find_last_not_of(" \t") + 1);
     valueStr.erase(0, valueStr.find_first_not_of(" \t"));
     valueStr.erase(valueStr.find_last_not_of(" \t") + 1);
-
+	
     // Validate the date and value
     double value;
     return isValidDate(date) && isValidValue(valueStr, value);
@@ -91,6 +106,19 @@ bool BitcoinExchange::isValidInputLine(const std::string &line) const
 
 double BitcoinExchange::getExchangeRate(const std::string &date) const
 {
+    std::map<std::string, double>::const_iterator it = data.lower_bound(date);
+    
+    // If exact match found
+    if (it != data.end() && it->first == date)
+        return it->second;
+    
+    // If date is before the first entry
+    if (it == data.begin())
+        return -1; // No earlier date available
+    
+    // Return the exchange rate from the closest earlier date
+    --it;
+    return it->second;
 }
 
 void BitcoinExchange::loadData(const std::string &filename)
@@ -99,24 +127,65 @@ void BitcoinExchange::loadData(const std::string &filename)
     if (!file.is_open())
         throw FileError();
     std::string line;
-    std::getline(file, line); // Skip header
+    std::getline(file, line);
+    if (line != "date,exchange_rate")
+        throw DataError();
     while (std::getline(file, line))
     {
-        std::istringstream ss(line);
-        std::string date;
-        std::string valueStr;
-        if (!std::getline(ss, date, ',') || !std::getline(ss, valueStr))
+        if (!isValidDataLine(line))
             throw DataError();
 
+        size_t commaPos = line.find(',');
+        std::string date = line.substr(0, commaPos);
+        std::string valueStr = line.substr(commaPos + 1);
         double value = std::atof(valueStr.c_str());
         data[date] = value;
-        std::cout << "Loaded: " << date << " => " << value << std::endl;
     }
     file.close();
+    if (data.empty())
+        throw DataError();
 }
 
 void BitcoinExchange::processInputFile(const std::string &filename)
 {
-    (void)filename;
-    // include full path to avoid unused parameter warning
+    std::ifstream file(filename.c_str());
+    if (!file.is_open())
+        throw FileError();
+    
+    std::string line;
+    std::getline(file, line); // Skip header
+    if (line != "date | value")
+        throw InputError();
+    
+    while (std::getline(file, line))
+    {
+        if (!isValidInputLine(line))
+        {
+            std::cerr << "Error: bad input => " << line << std::endl;
+            continue;
+        }
+        
+        size_t pipePos = line.find('|');
+        std::string date = line.substr(0, pipePos);
+        std::string valueStr = line.substr(pipePos + 1);
+        
+        // Trim whitespace
+        date.erase(0, date.find_first_not_of(" \t"));
+        date.erase(date.find_last_not_of(" \t") + 1);
+        valueStr.erase(0, valueStr.find_first_not_of(" \t"));
+        valueStr.erase(valueStr.find_last_not_of(" \t") + 1);
+        
+        double value = std::atof(valueStr.c_str());
+        double exchangeRate = getExchangeRate(date);
+        
+        if (exchangeRate == -1)
+        {
+            std::cerr << "Error: no exchange rate available for date => " << date << std::endl;
+            continue;
+        }
+        
+        std::cout << date << " => " << value << " = " << (value * exchangeRate) << std::endl;
+    }
+    
+    file.close();
 }

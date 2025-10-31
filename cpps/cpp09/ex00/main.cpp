@@ -11,7 +11,7 @@ int main(int argc, char** argv)
     BitcoinExchange btcExchange;
     try
     {
-        btcExchange.loadData("dataSmall.csv");
+        btcExchange.loadData("Data.csv");
         btcExchange.processInputFile(argv[1]);
     }
     catch (const std::exception& e)

@@ -12,6 +12,7 @@ private:
 
     bool    isValidDate(const std::string &date) const;
     bool    isValidValue(const std::string &valueStr, double &value) const;
+	bool	isValidDataValue(const std::string &valueStr, double &value) const;
     double  getExchangeRate(const std::string &date) const;
     bool    isValidDataLine(const std::string &line) const;
     bool    isValidInputLine(const std::string &line) const;
